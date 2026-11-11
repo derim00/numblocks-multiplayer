@@ -1,0 +1,496 @@
+/* Saving: each world's record (its name, seed, the time, the weather, the player, chests and
+ * furnaces) next to the records of its changed blocks (edits.c), and the options. A world
+ * saves every 45 seconds of play, as Minecraft does, and when you quit; block changes reach
+ * storage as they fill the journal. Worlds live in slots: the records of slot 3 are
+ * "nb3.nbw" and "nb3r..." (its regions). */
+#include <stddef.h>
+#include "nb.h"
+#pragma GCC optimize("Os")   /* (not where the time goes: small) */
+#include "edits.h"
+
+#define OPTIONS_REC "numblocks.cfg"
+
+Options opt = {2, 0, 100, 1, 1, 0, 0, 0, {0}};
+int64_t world_seed;
+uint8_t world_type;
+
+/* the record's head: version 1 had no name (it was "New World") */
+typedef struct {
+  char magic[4];
+  uint16_t player_size, tiles_size;
+  int64_t seed;
+  uint32_t time;
+  Weather weather;
+} Head1;
+typedef struct {
+  Head1 h;
+  char name[WORLD_NAME + 1];
+  uint32_t played;
+} Head2;   /* version 2 had no cheats or game rules */
+typedef struct {
+  Head2 h2;
+  uint8_t cheats, rules, type, pad;   /* (type: 0 in worlds from before there were others) */
+} Head;
+
+extern uint32_t game_time;
+void *tiles_data(uint32_t *len);
+
+uint8_t game_rules = GR_DEFAULT;
+bool world_cheats, lan_open, lan_cheats;
+static int slot = 1;                   /* the world being played */
+static char cur_name[WORLD_NAME + 1];  /* its name */
+static uint32_t cur_played;
+
+static void prefix_of(int s, char *out) { out[0] = 'n', out[1] = 'b', out[2] = (char)('0' + s), out[3] = 0; }
+static void record_of(int s, char *out) {
+  prefix_of(s, out);
+  out[3] = '.', out[4] = 'n', out[5] = 'b', out[6] = 'w', out[7] = 0;
+}
+static void copy_name(char *d, const char *s) {
+  int i = 0;
+  for (; s[i] && i < WORLD_NAME; i++) d[i] = s[i];
+  while (NP_TEXT_EXTRA && i && (s[i] & 0xC0) == 0x80) i--;   /* (not a letter cut) */
+  d[i] = 0;
+}
+
+/* a slot's record, read as the latest head (a version 1 record named "New World"); NULL: none */
+static const uint8_t *read_head(int s, Head *h, uint32_t *len, uint32_t *head_len) {
+  char rec[8];
+  record_of(s, rec);
+  const uint8_t *d = plat_load(rec, len);
+  if (!d || *len < sizeof(Head1)) return NULL;
+  memset(h, 0, sizeof *h);
+  if (!memcmp(d, "NBW1", 4)) {
+    memcpy(&h->h2.h, d, sizeof(Head1));
+    copy_name(h->h2.name, T("New World"));
+    *head_len = sizeof(Head1);
+  } else if (!memcmp(d, "NBW2", 4) && *len >= sizeof(Head2)) {
+    memcpy(&h->h2, d, sizeof(Head2));
+    *head_len = sizeof(Head2);
+  } else if (!memcmp(d, "NBW3", 4) && *len >= sizeof(Head)) {
+    memcpy(h, d, sizeof(Head));
+    *head_len = sizeof(Head);
+  } else
+    return NULL;
+  h->h2.name[WORLD_NAME] = 0;
+  if (h->h2.h.player_size != sizeof pl || *len < *head_len + sizeof pl) return NULL;
+  if (*head_len < sizeof(Head)) {
+    /* (older worlds: cheats as a new world of their mode would have them, the rules as they start) */
+    h->cheats = d[*head_len + offsetof(Player, mode)] == 1;
+    h->rules = GR_DEFAULT;
+  }
+  return d;
+}
+
+bool world_info(int s, WorldInfo *w) {
+  Head h;
+  uint32_t len, hl;
+  const uint8_t *d = read_head(s, &h, &len, &hl);
+  if (!d) return false;
+  Player p;
+  memcpy(&p, d + hl, sizeof p);
+  copy_name(w->name, h.h2.name);
+  w->mode = p.mode;
+  w->cheats = h.cheats;
+  w->type = h.type;
+  w->seed = h.h2.h.seed;
+  w->played = h.h2.played;
+  return true;
+}
+
+int world_free_slot(void) {
+  WorldInfo w;
+  for (int s = 1; s <= MAX_WORLDS; s++)
+    if (!world_info(s, &w)) return s;
+  return 0;
+}
+
+static bool name_taken(const char *n) {
+  WorldInfo w;
+  for (int s = 1; s <= MAX_WORLDS; s++)
+    if (world_info(s, &w) && !strcmp(w.name, n)) return true;
+  return false;
+}
+
+void world_unique_name(const char *base, char *out) {
+  char b[WORLD_NAME + 1];
+  copy_name(b, base[0] ? base : T("New World"));
+  copy_name(out, b);
+  for (int k = 2; name_taken(out) && k < 100; k++) {
+    /* "New World (2)": the number kept whole, the name cut to fit */
+    char sfx[8] = {' ', '(', 0};
+    int n = 2;
+    if (k >= 10) sfx[n++] = (char)('0' + k / 10);
+    sfx[n++] = (char)('0' + k % 10), sfx[n++] = ')', sfx[n] = 0;
+    int bl = (int)strlen(b), room = WORLD_NAME - n;
+    if (bl > room) bl = room;
+    while (NP_TEXT_EXTRA && bl && (b[bl] & 0xC0) == 0x80) bl--;
+    memcpy(out, b, (size_t)bl);
+    memcpy(out + bl, sfx, (size_t)n + 1);
+  }
+}
+
+#if NB_DIMS
+/* NumBlocks.nwa: NumPlay's NumBlocks reads the same world record, so the record holds what it knows: the
+ * player in the Overworld (where they last were there), with none of the Nether's and the End's items,
+ * the Overworld's chests and furnaces. The rest is in "nb3rdim.nbx" by it: the dimension the player is
+ * in, the player as they are, every chest and furnace, the dimensions' state. If NumPlay's NumBlocks
+ * saved the world after (the record is not the one the copy goes with), the record wins, the player in
+ * the Overworld, and the Nether's and the End's chests and the dimensions' state come back from the copy */
+#define NOLD 8
+typedef struct {
+  char magic[4];
+  uint32_t time, played;   /* the record's: the copy goes with it */
+  int32_t dim;
+  Player pl;
+  DimsState dst;
+  /* (NBD2) the chunks the world had before NumBlocks.nwa made villages and temples: up to 8 boxes */
+  uint8_t nold, pad[3];
+  int16_t old[NOLD][4];
+} Side;   /* then the tiles */
+#define SIDE1 offsetof(Side, nold)   /* (NBD1: the world's copy made before, without the boxes) */
+static void side_of(int s, char *out) {
+  prefix_of(s, out);
+  memcpy(out + 3, "rdim.nbx", 9);
+}
+static void known(Stack *s, int n) {
+  for (int i = 0; i < n; i++)
+    if (s[i].id >= I_END) s[i].id = 0, s[i].aux = 0;
+}
+void tiles_for_numplay(void *t);
+void tiles_merge(const void *t);
+
+/* Villages and temples (gen_struct.h) are not made in the chunks a world had before NumBlocks.nwa made them,
+ * so that an old world keeps its look: where it had been, as told when it is first opened since (the
+ * regions of its changes, 3 chunks around, and 6 around the player and their spawn), kept as up to 8 boxes
+ * of chunks (x0, z0, x1, z1) with the world (the side record) */
+static int16_t old_box[NOLD][4];
+static uint8_t n_old;
+bool gen_old_chunk(int cx, int cz) {
+  for (int i = 0; i < n_old; i++)
+    if (cx >= old_box[i][0] && cx <= old_box[i][2] && cz >= old_box[i][1] && cz <= old_box[i][3]) return true;
+  return false;
+}
+static int b_area(const int16_t *b) { return (b[2] - b[0] + 1) * (b[3] - b[1] + 1); }
+static void old_area(int s, float x, float z) {
+  int16_t b[48][4];
+  int n = 0;
+  int ix = (int)x - (x < (int)x), iz = (int)z - (z < (int)z);   /* (floored) */
+  int c[2][2] = {{ix >> 4, iz >> 4}, {pl.spawn_x >> 4, pl.spawn_z >> 4}};
+  for (int k = 0; k < 2; k++)
+    b[n][0] = (int16_t)(c[k][0] - 6), b[n][1] = (int16_t)(c[k][1] - 6), b[n][2] = (int16_t)(c[k][0] + 6),
+    b[n][3] = (int16_t)(c[k][1] + 6), n++;
+  /* the Overworld's change records, "nb3r-3_12.nbe": regions of 4 x 4 chunks */
+  char pre[4], name[40];
+  prefix_of(s, pre);
+  for (int i = 0; plat_record(i, name, sizeof name); i++) {
+    if (memcmp(name, pre, 3) || name[3] != 'r') continue;
+    int v[2], k = 0;
+    const char *p = name + 4;
+    for (; k < 2; k++) {
+      int neg = *p == '-', d = 0;
+      p += neg;
+      if (*p < '0' || *p > '9') break;
+      while (*p >= '0' && *p <= '9') d = d * 10 + (*p++ - '0');
+      v[k] = neg ? -d : d;
+      if (*p++ != (k ? '.' : '_')) break;
+    }
+    if (k < 2) continue;
+    if (n == 48) n--;   /* (a world changed in more places: the last box grows to hold them) */
+    b[n][0] = (int16_t)(v[0] * 4 - 3), b[n][1] = (int16_t)(v[1] * 4 - 3), b[n][2] = (int16_t)(v[0] * 4 + 6),
+    b[n][3] = (int16_t)(v[1] * 4 + 6);
+    n++;
+  }
+  /* to 8 boxes: the two whose union adds least, joined, until they fit */
+  while (n > NOLD) {
+    int bi = 0, bj = 1, best = 0x7fffffff;
+    for (int i = 0; i < n; i++)
+      for (int j = i + 1; j < n; j++) {
+        int16_t u[4] = {b[i][0] < b[j][0] ? b[i][0] : b[j][0], b[i][1] < b[j][1] ? b[i][1] : b[j][1],
+                        b[i][2] > b[j][2] ? b[i][2] : b[j][2], b[i][3] > b[j][3] ? b[i][3] : b[j][3]};
+        int add = b_area(u) - b_area(b[i]) - b_area(b[j]);
+        if (add < best) best = add, bi = i, bj = j;
+      }
+    for (int k = 0; k < 2; k++) {
+      if (b[bj][k] < b[bi][k]) b[bi][k] = b[bj][k];
+      if (b[bj][k + 2] > b[bi][k + 2]) b[bi][k + 2] = b[bj][k + 2];
+    }
+    memmove(b[bj], b[bj + 1], sizeof b[0] * (size_t)(n - bj - 1));
+    n--;
+  }
+  memcpy(old_box, b, sizeof b[0] * (size_t)n);
+  n_old = (uint8_t)n;
+}
+#endif
+
+bool save_world(void) {
+  bool ok = edits_flush();
+  uint32_t tl;
+  void *t = tiles_data(&tl);
+  Head h;
+  memset(&h, 0, sizeof h);
+  h.h2.h = (Head1){{'N', 'B', 'W', '3'}, (uint16_t)sizeof pl, (uint16_t)tl, world_seed, game_time, weather};
+  copy_name(h.h2.name, cur_name);
+  h.h2.played = cur_played;
+  h.cheats = world_cheats, h.rules = game_rules, h.type = world_type;
+  /* one record: the head, the player, the tiles (written from a buffer made in the merge scratch) */
+  uint32_t n = sizeof h + sizeof pl + tl;
+  uint8_t *b = (uint8_t *)edits_scratch(n);
+  if (!b) return false;
+  memcpy(b, &h, sizeof h);
+#if NB_DIMS
+  {
+    Player p = pl;
+    if (dim != DIM_OVERWORLD) {
+      p.x = dst.ow_x, p.y = dst.ow_y, p.z = dst.ow_z;
+      p.vx = p.vy = p.vz = 0, p.fall = 0, p.fire = 0;
+    }
+    known(p.inv, 36), known(p.armor, 4), known(p.craft, 4), known(&p.cursor, 1);
+    memcpy(b + sizeof h, &p, sizeof p);
+  }
+  memcpy(b + sizeof h + sizeof pl, t, tl);
+  tiles_for_numplay(b + sizeof h + sizeof pl);
+#else
+  memcpy(b + sizeof h, &pl, sizeof pl);
+  memcpy(b + sizeof h + sizeof pl, t, tl);
+#endif
+  char rec[8];
+  record_of(slot, rec);
+  ok = plat_save(rec, b, n) && ok;
+  edits_forget();
+#if NB_DIMS
+  {
+    Side sd;
+    memset(&sd, 0, sizeof sd);
+    memcpy(sd.magic, "NBD2", 4);
+    sd.time = game_time, sd.played = cur_played, sd.dim = dim, sd.pl = pl, sd.dst = dst;
+    sd.nold = n_old;
+    memcpy(sd.old, old_box, sizeof old_box);
+    char rn[16];
+    side_of(slot, rn);
+    uint8_t *c = (uint8_t *)edits_scratch(sizeof sd + tl);
+    if (c) {
+      memcpy(c, &sd, sizeof sd);
+      memcpy(c + sizeof sd, t, tl);
+      ok = plat_save(rn, c, sizeof sd + tl) && ok;
+      edits_forget();
+    }
+  }
+#endif
+  copy_write();
+  return ok;
+}
+
+/* the world becoming the one played: the latest in the list */
+static void played(int s) {
+  opt.last_world = (uint8_t)s;
+  cur_played = ++opt.plays;
+  save_options();
+}
+
+bool load_world(int s) {
+  Head h;
+  uint32_t len, hl, tl;
+  const uint8_t *d = read_head(s, &h, &len, &hl);
+  void *t = tiles_data(&tl);
+  if (!d || h.h2.h.tiles_size != tl || len != hl + sizeof pl + tl) return false;
+  slot = s;
+  copy_name(cur_name, h.h2.name);
+  cur_played = h.h2.played;
+  world_seed = h.h2.h.seed;
+  game_time = h.h2.h.time;
+  world_cheats = h.cheats, lan_open = lan_cheats = false, game_rules = h.rules, world_type = h.type;
+  /* World.calculateInitialWeather */
+  weather = h.h2.h.weather;
+  rain_str = weather.raining ? 1 : 0;
+  thunder_str = weather.thundering ? 1 : 0;
+  memcpy(&pl, d + hl, sizeof pl);
+  memcpy(t, d + hl + sizeof pl, tl);
+  memset(ents, 0, sizeof ents);
+#if NB_DIMS
+  {
+    dim = DIM_OVERWORLD;
+    memset(&dst, 0, sizeof dst);
+    char rn[16];
+    side_of(s, rn);
+    uint32_t sl;
+    const uint8_t *c = plat_load(rn, &sl);
+    Side sd;
+    memset(&sd, 0, sizeof sd);
+    /* (NBD1, from before the villages: no boxes; the world's are found below) */
+    uint32_t hl2 = c && !memcmp(c, "NBD2", 4) ? sizeof sd : c && !memcmp(c, "NBD1", 4) ? SIDE1 : 0;
+    if (hl2 && sl == hl2 + tl) {
+      memcpy(&sd, c, hl2);
+      dst = sd.dst;
+      if (sd.time == h.h2.h.time && sd.played == h.h2.played && sd.dim >= 0 && sd.dim <= DIM_END) {
+        dim = sd.dim, pl = sd.pl;
+        memcpy(t, c + hl2, tl);
+      } else
+        tiles_merge(c + hl2);
+    }
+    /* where the world had been before NumBlocks.nwa made villages: kept, else found now */
+    if (hl2 == sizeof sd) {
+      n_old = sd.nold > NOLD ? NOLD : sd.nold;
+      memcpy(old_box, sd.old, sizeof old_box);
+    } else if (dim == DIM_OVERWORLD) old_area(s, pl.x, pl.z);
+    else old_area(s, dst.ow_x, dst.ow_z);
+  }
+#endif
+  char pre[4];
+  prefix_of(s, pre);
+  world_new(world_seed, pre);
+  if (s != opt.last_world || h.h2.played != opt.plays) played(s);
+  return true;
+}
+
+void new_world(int s, int64_t seed, int mode, bool cheats, int type, const char *name) {
+  char pre[4];
+  prefix_of(s, pre);
+  plat_remove_prefix(pre);
+  slot = s;
+  copy_name(cur_name, name);
+  uint32_t tl;
+  void *t = tiles_data(&tl);   /* (first: the length is only known after the call) */
+  memset(t, 0, tl);
+  memset(ents, 0, sizeof ents);
+  world_seed = seed;
+  game_time = 0;
+  world_cheats = cheats, lan_open = lan_cheats = false, game_rules = GR_DEFAULT, world_type = (uint8_t)type;
+  memset(&weather, 0, sizeof weather);
+  rain_str = thunder_str = 0;
+#if NB_DIMS
+  dim = DIM_OVERWORLD;
+  memset(&dst, 0, sizeof dst);
+  n_old = 0;   /* (a new world: villages everywhere) */
+#endif
+  world_new(seed, pre);
+  player_spawn();
+  pl.mode = (uint8_t)mode;
+  played(s);
+}
+
+bool rename_world(int s, const char *name) {
+  Head h;
+  uint32_t len, hl;
+  const uint8_t *d = read_head(s, &h, &len, &hl);
+  if (!d) return false;
+  /* the record again with the new head (made in the merge scratch, as saving does) */
+  uint32_t body = len - hl, n = sizeof h + body;
+  uint8_t *b = (uint8_t *)edits_scratch(n);
+  if (!b) return false;
+  memcpy(b + sizeof h, d + hl, body);   /* (first: the scratch may be where nothing else is) */
+  memcpy(h.h2.h.magic, "NBW3", 4);
+  copy_name(h.h2.name, name);
+  memcpy(b, &h, sizeof h);
+  char rec[8];
+  record_of(s, rec);
+  bool ok = plat_save(rec, b, n);
+  edits_forget();
+  if (s == slot) copy_name(cur_name, name);
+  copy_write();
+  return ok;
+}
+
+void delete_world(int s) {
+  char pre[4];
+  prefix_of(s, pre);
+  plat_remove_prefix(pre);
+  if (opt.last_world == s) opt.last_world = 0;
+  save_options();   /* (and the copy, without that world) */
+}
+
+/* ---------------------------------------------------------------- the copy
+ * Installing an app from the NumWorks website empties the calculator's files but the Python scripts.
+ * So NumBlocks keeps its saves in one too, as comment lines "#>name:base64" (the way NumPlay keeps its
+ * games' saves, and in NumPlay it leaves that to NumPlay), and when none of its saves are left, they
+ * come back from it. */
+#define COPY_REC "numblocks_saves.py"
+static const char copy_head[] = "# NumBlocks' saves: keep this file\n";
+static const char b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+static bool ours(const char *n) { return !strcmp(n, OPTIONS_REC) || (n[0] == 'n' && n[1] == 'b' && n[2] >= '1' && n[2] <= '9'); }
+
+void copy_write(void) {
+  if (plat_in_launcher()) return;
+  char name[40];
+  uint32_t total = 1 + sizeof copy_head - 1 + 1, len;
+  for (int i = 0; plat_record(i, name, sizeof name); i++)
+    if (ours(name) && plat_load(name, &len)) total += 2 + (uint32_t)strlen(name) + 1 + (len + 2) / 3 * 4 + 1;
+  uint8_t *o = plat_save_open(COPY_REC, total), *end = o + total;
+  if (!o) return;   /* (no room: the copy there stays) */
+  *o++ = 0;         /* the script's status byte: not imported by the shell */
+  memcpy(o, copy_head, sizeof copy_head - 1);
+  o += sizeof copy_head - 1;
+  for (int i = 0; plat_record(i, name, sizeof name); i++) {
+    const uint8_t *d = ours(name) ? plat_load(name, &len) : NULL;
+    uint32_t nl = (uint32_t)strlen(name);
+    if (!d || o + 2 + nl + 1 + (len + 2) / 3 * 4 + 1 >= end) continue;
+    *o++ = '#', *o++ = '>';
+    memcpy(o, name, nl);
+    o += nl;
+    *o++ = ':';
+    for (uint32_t k = 0; k < len; k += 3, o += 4) {
+      /* (written out: GCC 15.2 for the calculator got a loop over the four wrong, see launcher/src/storage.c) */
+      uint32_t left = len - k, v = (uint32_t)d[k] << 16 | (left > 1 ? d[k + 1] << 8 : 0) | (left > 2 ? d[k + 2] : 0);
+      o[0] = (uint8_t)b64[v >> 18 & 63];
+      o[1] = (uint8_t)b64[v >> 12 & 63];
+      o[2] = left > 1 ? (uint8_t)b64[v >> 6 & 63] : '=';
+      o[3] = left > 2 ? (uint8_t)b64[v & 63] : '=';
+    }
+    *o++ = '\n';
+  }
+  while (o < end) *o++ = 0;
+  plat_save_close(COPY_REC);
+}
+
+static int b64_value(uint8_t c) {
+  for (int i = 0; i < 64; i++)
+    if ((uint8_t)b64[i] == c) return i;
+  return -1;
+}
+void copy_restore(void) {
+  char name[40];
+  for (int i = 0; plat_record(i, name, sizeof name); i++)
+    if (ours(name)) return;   /* (saves are here: they are the newest) */
+  uint32_t n, at = 1;
+  const uint8_t *c = plat_load(COPY_REC, &n);
+  while (c && at < n) {
+    /* a line: "#>name:base64" */
+    const uint8_t *l = c + at, *e = l;
+    while (e < c + n && *e != '\n' && *e) e++;
+    uint32_t next = (uint32_t)(e - c) + 1;
+    const uint8_t *colon = l;
+    while (colon < e && *colon != ':') colon++;
+    uint32_t nl = (uint32_t)(colon - l - 2), len = (uint32_t)(e - colon - 1);
+    if (e - l > 3 && l[0] == '#' && l[1] == '>' && colon < e && nl < sizeof name && len && !(len % 4)) {
+      memcpy(name, l + 2, nl), name[nl] = 0;
+      uint32_t size = len / 4 * 3 - (colon[len] == '=') - (colon[len - 1] == '='), off = (uint32_t)(colon + 1 - c);
+      uint8_t *out = ours(name) ? plat_save_open(name, size) : NULL;
+      c = plat_load(COPY_REC, &n);   /* (the files moved about) */
+      if (out && c) {
+        const uint8_t *data = c + off;
+        for (uint32_t i = 0, k = 0; i < len; i += 4) {
+          int v[4];
+          for (int q = 0; q < 4; q++) v[q] = data[i + q] == '=' ? 0 : b64_value(data[i + q]);
+          uint32_t w = (uint32_t)((v[0] & 63) << 18 | (v[1] & 63) << 12 | (v[2] & 63) << 6 | (v[3] & 63));
+          for (int q = 0; q < 3 && k < size; q++) out[k++] = (uint8_t)(w >> (16 - 8 * q));
+        }
+        plat_save_close(name);
+        c = plat_load(COPY_REC, &n);
+      }
+    }
+    at = next;
+  }
+}
+
+void load_options(void) {
+  keys_reset();
+  uint32_t len = 0;
+  const uint8_t *d = plat_load(OPTIONS_REC, &len);
+  /* (an older, shorter record: what it has; the rest stays as it was) */
+  if (d && len <= sizeof opt) memcpy(&opt, d, len);
+  keys_update(opt.keys_seen);
+}
+void save_options(void) {
+  plat_save(OPTIONS_REC, &opt, sizeof opt);
+  copy_write();
+}

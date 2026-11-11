@@ -1,0 +1,411 @@
+/* Made by tools/pack.py: textures and block tables (see data.c; NumBlocks.nwa: data_dims.c). */
+#ifndef NB_DATA_H
+#define NB_DATA_H
+#include <stdint.h>
+#include "blocks.h"
+
+#if NB_DIMS
+#define NTEX 249
+#else
+#define NTEX 217
+#endif
+/* tex_flags: bits 0-4, the first palette index tinted by the biome (16: none); 0x20: has see-through texels */
+extern const uint8_t tex_px[NTEX][128];
+extern const uint16_t tex_pal[NTEX][16];
+extern const uint8_t tex_flags[NTEX];
+
+/* faces: -Y +Y -Z +Z -X +X */
+extern const uint8_t blk_tex[B_N][6];
+extern const uint8_t blk_model[B_N], blk_light[B_N], blk_flags[B_N], blk_tool[B_N];
+extern const uint8_t blk_nbox[B_N];   /* how many boxes it is made of (0: a whole cube) */
+extern const int8_t blk_box[B_N][2][6];   /* the boxes, sixteenths: x0 y0 z0 x1 y1 z1 */
+extern const uint8_t blk_front[B_N];   /* the texture of its front (0: none) */
+extern const uint8_t blk_level[B_N], blk_hard[B_N], blk_id[B_N], blk_meta[B_N];
+/* blk_flags: bits 0-2 the tint (1 grass, 2 foliage, 3 spruce, 4 birch, 5 water, 6 lily pad) */
+extern const uint16_t biome_grass[256], biome_foliage[256], biome_water[256];
+extern const int8_t biome_temp[256];   /* temperature x 50 */
+extern const uint8_t biome_rain[256];   /* 1: it rains (or snows), 2: a snowy biome */
+/* rain and snow: runs down a texel column {row, column, length, alpha}, by row; idx: the first run at or below a row */
+extern const uint8_t rain_run[][4], snow_run[][4], rain_idx[257], snow_idx[257];
+#define BF_OPAQUE 8
+#define BF_SOLID 16
+#define BF_TINT 7
+
+#define TX_STONE 0
+#define TX_STONE_GRANITE 1
+#define TX_STONE_GRANITE_SMOOTH 2
+#define TX_STONE_DIORITE 3
+#define TX_STONE_DIORITE_SMOOTH 4
+#define TX_STONE_ANDESITE 5
+#define TX_STONE_ANDESITE_SMOOTH 6
+#define TX_GRASS_TOP 7
+#define TX_GRASS_SIDE 8
+#define TX_DIRT 9
+#define TX_GRASS_SIDE_OVERLAY 10
+#define TX_GRASS_SIDE_SNOWED 11
+#define TX_COARSE_DIRT 12
+#define TX_DIRT_PODZOL_TOP 13
+#define TX_DIRT_PODZOL_SIDE 14
+#define TX_COBBLESTONE 15
+#define TX_PLANKS_OAK 16
+#define TX_PLANKS_SPRUCE 17
+#define TX_PLANKS_BIRCH 18
+#define TX_PLANKS_JUNGLE 19
+#define TX_PLANKS_ACACIA 20
+#define TX_PLANKS_BIG_OAK 21
+#define TX_SAPLING_OAK 22
+#define TX_SAPLING_SPRUCE 23
+#define TX_SAPLING_BIRCH 24
+#define TX_SAPLING_JUNGLE 25
+#define TX_SAPLING_ACACIA 26
+#define TX_SAPLING_ROOFED_OAK 27
+#define TX_BEDROCK 28
+#define TX_WATER_STILL 29
+#define TX_LAVA_STILL 30
+#define TX_SAND 31
+#define TX_RED_SAND 32
+#define TX_GRAVEL 33
+#define TX_GOLD_ORE 34
+#define TX_IRON_ORE 35
+#define TX_COAL_ORE 36
+#define TX_LOG_OAK_TOP 37
+#define TX_LOG_OAK 38
+#define TX_LOG_SPRUCE_TOP 39
+#define TX_LOG_SPRUCE 40
+#define TX_LOG_BIRCH_TOP 41
+#define TX_LOG_BIRCH 42
+#define TX_LOG_JUNGLE_TOP 43
+#define TX_LOG_JUNGLE 44
+#define TX_LEAVES_OAK 45
+#define TX_LEAVES_SPRUCE 46
+#define TX_LEAVES_BIRCH 47
+#define TX_LEAVES_JUNGLE 48
+#define TX_SPONGE 49
+#define TX_GLASS 50
+#define TX_LAPIS_ORE 51
+#define TX_LAPIS_BLOCK 52
+#define TX_SANDSTONE_TOP 53
+#define TX_SANDSTONE_NORMAL 54
+#define TX_SANDSTONE_BOTTOM 55
+#define TX_SANDSTONE_CARVED 56
+#define TX_SANDSTONE_SMOOTH 57
+#define TX_WEB 58
+#define TX_DEADBUSH 59
+#define TX_TALLGRASS 60
+#define TX_FERN 61
+#define TX_WOOL_COLORED_WHITE 62
+#define TX_WOOL_COLORED_ORANGE 63
+#define TX_WOOL_COLORED_MAGENTA 64
+#define TX_WOOL_COLORED_LIGHT_BLUE 65
+#define TX_WOOL_COLORED_YELLOW 66
+#define TX_WOOL_COLORED_LIME 67
+#define TX_WOOL_COLORED_PINK 68
+#define TX_WOOL_COLORED_GRAY 69
+#define TX_WOOL_COLORED_SILVER 70
+#define TX_WOOL_COLORED_CYAN 71
+#define TX_WOOL_COLORED_PURPLE 72
+#define TX_WOOL_COLORED_BLUE 73
+#define TX_WOOL_COLORED_BROWN 74
+#define TX_WOOL_COLORED_GREEN 75
+#define TX_WOOL_COLORED_RED 76
+#define TX_WOOL_COLORED_BLACK 77
+#define TX_FLOWER_DANDELION 78
+#define TX_FLOWER_ROSE 79
+#define TX_FLOWER_BLUE_ORCHID 80
+#define TX_FLOWER_ALLIUM 81
+#define TX_FLOWER_HOUSTONIA 82
+#define TX_FLOWER_TULIP_RED 83
+#define TX_FLOWER_TULIP_ORANGE 84
+#define TX_FLOWER_TULIP_WHITE 85
+#define TX_FLOWER_TULIP_PINK 86
+#define TX_FLOWER_OXEYE_DAISY 87
+#define TX_MUSHROOM_BROWN 88
+#define TX_MUSHROOM_RED 89
+#define TX_GOLD_BLOCK 90
+#define TX_IRON_BLOCK 91
+#define TX_STONE_SLAB_TOP 92
+#define TX_STONE_SLAB_SIDE 93
+#define TX_BRICK 94
+#define TX_STONEBRICK 95
+#define TX_TNT_TOP 96
+#define TX_TNT_SIDE 97
+#define TX_TNT_BOTTOM 98
+#define TX_BOOKSHELF 99
+#define TX_COBBLESTONE_MOSSY 100
+#define TX_OBSIDIAN 101
+#define TX_TORCH_ON 102
+#define TX_MOB_SPAWNER 103
+#define TX_CHEST_TOP 104
+#define TX_CHEST_SIDE 105
+#define TX_CHEST_FRONT 106
+#define TX_DIAMOND_ORE 107
+#define TX_DIAMOND_BLOCK 108
+#define TX_CRAFTING_TABLE_TOP 109
+#define TX_CRAFTING_TABLE_SIDE 110
+#define TX_CRAFTING_TABLE_FRONT 111
+#define TX_WHEAT_STAGE_0 112
+#define TX_WHEAT_STAGE_1 113
+#define TX_WHEAT_STAGE_2 114
+#define TX_WHEAT_STAGE_3 115
+#define TX_WHEAT_STAGE_4 116
+#define TX_WHEAT_STAGE_5 117
+#define TX_WHEAT_STAGE_6 118
+#define TX_WHEAT_STAGE_7 119
+#define TX_FARMLAND_DRY 120
+#define TX_FARMLAND_WET 121
+#define TX_FURNACE_TOP 122
+#define TX_FURNACE_SIDE 123
+#define TX_FURNACE_FRONT_OFF 124
+#define TX_FURNACE_FRONT_ON 125
+#define TX_DOOR_WOOD_LOWER 126
+#define TX_DOOR_WOOD_UPPER 127
+#define TX_LADDER 128
+#define TX_RAIL_NORMAL 129
+#define TX_REDSTONE_ORE 130
+#define TX_SNOW 131
+#define TX_ICE 132
+#define TX_CACTUS_TOP 133
+#define TX_CACTUS_SIDE 134
+#define TX_CACTUS_BOTTOM 135
+#define TX_CLAY 136
+#define TX_REEDS 137
+#define TX_PUMPKIN_TOP 138
+#define TX_PUMPKIN_SIDE 139
+#define TX_PUMPKIN_FACE_OFF 140
+#define TX_PUMPKIN_FACE_ON 141
+#define TX_STONEBRICK_MOSSY 142
+#define TX_STONEBRICK_CRACKED 143
+#define TX_STONEBRICK_CARVED 144
+#define TX_MUSHROOM_BLOCK_SKIN_BROWN 145
+#define TX_MUSHROOM_BLOCK_INSIDE 146
+#define TX_MUSHROOM_BLOCK_SKIN_STEM 147
+#define TX_MUSHROOM_BLOCK_SKIN_RED 148
+#define TX_MELON_TOP 149
+#define TX_MELON_SIDE 150
+#define TX_VINE 151
+#define TX_MYCELIUM_TOP 152
+#define TX_MYCELIUM_SIDE 153
+#define TX_WATERLILY 154
+#define TX_EMERALD_ORE 155
+#define TX_EMERALD_BLOCK 156
+#define TX_HARDENED_CLAY 157
+#define TX_HARDENED_CLAY_STAINED_WHITE 158
+#define TX_HARDENED_CLAY_STAINED_ORANGE 159
+#define TX_HARDENED_CLAY_STAINED_MAGENTA 160
+#define TX_HARDENED_CLAY_STAINED_LIGHT_BLUE 161
+#define TX_HARDENED_CLAY_STAINED_YELLOW 162
+#define TX_HARDENED_CLAY_STAINED_LIME 163
+#define TX_HARDENED_CLAY_STAINED_PINK 164
+#define TX_HARDENED_CLAY_STAINED_GRAY 165
+#define TX_HARDENED_CLAY_STAINED_SILVER 166
+#define TX_HARDENED_CLAY_STAINED_CYAN 167
+#define TX_HARDENED_CLAY_STAINED_PURPLE 168
+#define TX_HARDENED_CLAY_STAINED_BLUE 169
+#define TX_HARDENED_CLAY_STAINED_BROWN 170
+#define TX_HARDENED_CLAY_STAINED_GREEN 171
+#define TX_HARDENED_CLAY_STAINED_RED 172
+#define TX_HARDENED_CLAY_STAINED_BLACK 173
+#define TX_LOG_ACACIA_TOP 174
+#define TX_LOG_ACACIA 175
+#define TX_LOG_BIG_OAK_TOP 176
+#define TX_LOG_BIG_OAK 177
+#define TX_LEAVES_ACACIA 178
+#define TX_LEAVES_BIG_OAK 179
+#define TX_HAY_BLOCK_TOP 180
+#define TX_HAY_BLOCK_SIDE 181
+#define TX_COAL_BLOCK 182
+#define TX_ICE_PACKED 183
+#define TX_DOUBLE_PLANT_SUNFLOWER_BOTTOM 184
+#define TX_DOUBLE_PLANT_SUNFLOWER_TOP 185
+#define TX_DOUBLE_PLANT_SYRINGA_BOTTOM 186
+#define TX_DOUBLE_PLANT_SYRINGA_TOP 187
+#define TX_DOUBLE_PLANT_GRASS_BOTTOM 188
+#define TX_DOUBLE_PLANT_GRASS_TOP 189
+#define TX_DOUBLE_PLANT_FERN_BOTTOM 190
+#define TX_DOUBLE_PLANT_FERN_TOP 191
+#define TX_DOUBLE_PLANT_ROSE_BOTTOM 192
+#define TX_DOUBLE_PLANT_ROSE_TOP 193
+#define TX_DOUBLE_PLANT_PAEONIA_BOTTOM 194
+#define TX_DOUBLE_PLANT_PAEONIA_TOP 195
+#define TX_RED_SANDSTONE_TOP 196
+#define TX_RED_SANDSTONE_NORMAL 197
+#define TX_RED_SANDSTONE_BOTTOM 198
+#define TX_GLOWSTONE 199
+#define TX_BED_FEET_TOP 200
+#define TX_BED_FEET_SIDE 201
+#define TX_BED_FEET_END 202
+#define TX_BED_HEAD_TOP 203
+#define TX_BED_HEAD_SIDE 204
+#define TX_BED_HEAD_END 205
+#define TX_WATER_FLOW 206
+#define TX_LAVA_FLOW 207
+#define TX_CARROTS_STAGE_0 208
+#define TX_CARROTS_STAGE_1 209
+#define TX_CARROTS_STAGE_2 210
+#define TX_CARROTS_STAGE_3 211
+#define TX_POTATOES_STAGE_0 212
+#define TX_POTATOES_STAGE_1 213
+#define TX_POTATOES_STAGE_2 214
+#define TX_POTATOES_STAGE_3 215
+#define TX_FIRE_LAYER_0 216
+
+extern const uint8_t spr_px[], spr_w[], spr_h[], spr_alpha[];
+extern const uint16_t spr_off[];
+extern const uint16_t spr_pals[], spr_po[];
+#define SPR_PAL(i) (spr_pals + spr_po[i])   /* sprite i's colours, from 1 (0 is see-through) */
+extern const uint16_t blk_icon[B_N];   /* sprite of its icon */
+#define SP_HOTBAR 0
+#define SP_HOTBAR_SEL 1
+#define SP_CROSSHAIR 2
+#define SP_HEART_BG 3
+#define SP_HEART 4
+#define SP_HEART_HALF 5
+#define SP_FOOD_BG 6
+#define SP_FOOD 7
+#define SP_FOOD_HALF 8
+#define SP_ARMOR_BG 9
+#define SP_XP_BG 10
+#define SP_XP 11
+#define SP_BUBBLE 12
+#define SP_HEART_POISON 13
+#define SP_HEART_POISON_HALF 14
+#define SP_FOOD_HUNGER_BG 15
+#define SP_FOOD_HUNGER 16
+#define SP_FOOD_HUNGER_HALF 17
+#define SP_BOBBER 18
+#define SP_FISHING_ROD_CAST 19
+#define SP_SUN 20
+#define SP_MOON_0 21
+#define SP_MOON_1 22
+#define SP_MOON_2 23
+#define SP_MOON_3 24
+#define SP_MOON_4 25
+#define SP_MOON_5 26
+#define SP_MOON_6 27
+#define SP_MOON_7 28
+#define SP_BOW_PULLING_0 29
+#define SP_BOW_PULLING_1 30
+#define SP_BOW_PULLING_2 31
+#define SP_ARROW_ENTITY 32
+#define SP_FLAME 413
+#define SP_ARROW 414
+#define SP_ARMOR_FULL 415
+#define SP_ARMOR_HALF 416
+#define SP_BUBBLE_POP 417
+#define SP_HEART_HIT 418
+#define SP_TAB_TOP 419
+#define SP_TAB_TOP_SEL 420
+#define SP_TAB_BOTTOM 421
+#define SP_TAB_BOTTOM_SEL 422
+#define SP_SCROLLER 423
+#define SP_BUTTON 424
+#define SP_BUTTON_HOVER 425
+#define SP_BUTTON_OFF 426
+#define SP_SLOT_HELMET 427
+#define SP_SLOT_CHESTPLATE 428
+#define SP_SLOT_LEGGINGS 429
+#define SP_SLOT_BOOTS 430
+#define SP_STEVE 431
+#define SP_ARM 432
+#define SP_DIRT_BG 433
+
+#include "items.h"
+extern const uint16_t blk_item[B_N];   /* the item a block state counts as (0xFFFF: none) */
+extern const uint16_t blk_fuel[B_N];   /* ticks it burns in a furnace */
+extern const char *const blk_label[B_N], *const it_label[IT_N];
+extern const uint16_t it_icon[IT_N], it_dur[IT_N], it_fuel[IT_N];
+/* it_tier: the tool or armour material; it_a: attack damage, armour points or food; it_b: saturation x 10 */
+extern const uint8_t it_kind[IT_N], it_stack[IT_N], it_tier[IT_N], it_a[IT_N], it_b[IT_N];
+#if NB_DIMS
+extern const uint16_t it_place[IT_N];   /* the block it places (255: none) */
+#else
+extern const uint8_t it_place[N_ITEMS];   /* the block it places (255: none) */
+#endif
+typedef struct { uint16_t out; uint8_t n, w, h; uint16_t in[9]; } Recipe;   /* w 0: shapeless, h of them */
+#if NB_DIMS
+#define N_RECIPES 208
+#else
+#define N_RECIPES 187
+#endif
+extern const Recipe recipes[N_RECIPES];
+#if NB_DIMS
+#define N_SMELTING 29
+#else
+#define N_SMELTING 27
+#endif
+extern const uint16_t smelting[N_SMELTING][2];
+extern const uint16_t group_planks[];   /* ends with 0xFFFF */
+extern const uint16_t group_wool[];   /* ends with 0xFFFF */
+extern const uint16_t group_log[];   /* ends with 0xFFFF */
+extern const uint16_t group_sapling[];   /* ends with 0xFFFF */
+extern const uint8_t skin_px[][1024];   /* mob skins, 64 x 32 */
+extern const uint16_t skin_pal[][16];
+enum { SKIN_ZOMBIE, SKIN_SKELETON, SKIN_CREEPER, SKIN_SPIDER, SKIN_PIG, SKIN_COW, SKIN_SHEEP, SKIN_SHEEP_FUR, SKIN_CHICKEN };
+extern const uint8_t cracks[10][32];   /* destroy stages, 1 bit a texel */
+extern const uint16_t tab_items[], tab_start[13];   /* the creative tabs' items */
+extern const char *const tab_name[12];
+extern const uint8_t font_bits[96 * 8], font_w[96];   /* characters 32-127 */
+extern const uint8_t img_rle[], img_w[], img_h[];
+extern const uint16_t img_rows[];
+extern const uint16_t img_row0[], img_pal[][16];
+#define IMG_INVENTORY 0
+#define IMG_CRAFTING_TABLE 1
+#define IMG_FURNACE 2
+#define IMG_CHEST 3
+#define IMG_CREATIVE 4
+
+/* the Nether and the End (NumBlocks.nwa only: data_dims.c) */
+#if NB_DIMS
+#define TX_NETHERRACK 217
+#define TX_SOUL_SAND 218
+#define TX_PORTAL 219
+#define TX_NETHER_BRICK 220
+#define TX_NETHER_WART_STAGE_0 221
+#define TX_NETHER_WART_STAGE_1 222
+#define TX_NETHER_WART_STAGE_2 223
+#define TX_END_STONE 224
+#define TX_ENDFRAME_TOP 225
+#define TX_ENDFRAME_SIDE 226
+#define TX_ENDFRAME_EYE 227
+#define TX_DRAGON_EGG 228
+#define TX_QUARTZ_ORE 229
+#define TX_QUARTZ_BLOCK_TOP 230
+#define TX_QUARTZ_BLOCK_SIDE 231
+#define TX_QUARTZ_BLOCK_BOTTOM 232
+#define TX_QUARTZ_BLOCK_CHISELED_TOP 233
+#define TX_QUARTZ_BLOCK_CHISELED 234
+#define TX_QUARTZ_BLOCK_LINES_TOP 235
+#define TX_QUARTZ_BLOCK_LINES 236
+#define TX_IRON_BARS 237
+#define TX_DOOR_IRON_LOWER 238
+#define TX_DOOR_IRON_UPPER 239
+#define TX_RAIL_X 240
+#define TX_PORTAL_4 241
+#define TX_PORTAL_8 242
+#define TX_PORTAL_12 243
+#define TX_PORTAL_16 244
+#define TX_PORTAL_20 245
+#define TX_PORTAL_24 246
+#define TX_PORTAL_28 247
+#define TX_END_SKY 248
+#define SP_BOSS_BG 502
+#define SP_BOSS 503
+enum { SKIN_ZOMBIE_PIGMAN = 9, SKIN_GHAST = 10, SKIN_GHAST_SHOOTING = 11, SKIN_BLAZE = 12, SKIN_MAGMACUBE = 13, SKIN_ENDERMAN = 14, SKIN_WITHER_SKELETON = 15 };
+extern const char end_text[];   /* the End poem, then the credits */
+extern const uint8_t skin_crystal_px[];   /* endercrystal/endercrystal.png, 4 bits a texel */
+extern const uint16_t skin_crystal_pal[16];
+extern const uint8_t skin_dragon_px[];   /* enderdragon/dragon.png, 4 bits a texel */
+extern const uint16_t skin_dragon_pal[16];
+extern const uint8_t skin_farmer_px[];   /* villager/farmer.png, 4 bits a texel */
+extern const uint16_t skin_farmer_pal[16];
+extern const uint8_t skin_librarian_px[];   /* villager/librarian.png, 4 bits a texel */
+extern const uint16_t skin_librarian_pal[16];
+extern const uint8_t skin_priest_px[];   /* villager/priest.png, 4 bits a texel */
+extern const uint16_t skin_priest_pal[16];
+extern const uint8_t skin_smith_px[];   /* villager/smith.png, 4 bits a texel */
+extern const uint16_t skin_smith_pal[16];
+extern const uint8_t skin_butcher_px[];   /* villager/butcher.png, 4 bits a texel */
+extern const uint16_t skin_butcher_pal[16];
+#endif
+
+#endif
