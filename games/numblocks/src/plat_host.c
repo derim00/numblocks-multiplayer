@@ -13,7 +13,12 @@ uint32_t plat_keys(void) { return host_keys; }
 uint64_t host_raw;                 /* (tests: keys as the calculator numbers them) */
 uint64_t plat_scan(void) { return host_raw; }
 uint32_t plat_millis(void) { return host_time; }
-void plat_sleep(uint32_t ms) { host_time += ms; }
+#include <unistd.h>
+static int net_fd;
+void plat_sleep(uint32_t ms) {
+  host_time += ms;
+  if (net_fd > 0) usleep(ms * 1000);   /* (talking to a real gateway: real time) */
+}
 void plat_push(int x, int y, int w, int h, const uint16_t *px) {
   for (int r = 0; r < h; r++)
     for (int c = 0; c < w; c++)
@@ -109,3 +114,87 @@ void host_shot(const char *path) {
   }
   fclose(f);
 }
+
+/* ---------------------------------------------------------------- the link to NumSocial, on a computer
+ * (tests): TCP to the gateway's simulator port (numtube_gateway.py --tcp PORT), its TMIA frames (magic,
+ * version, type, length, payload, CRC-16) */
+#include <arpa/inet.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+static uint8_t net_in[8192];
+static int net_n;
+static uint16_t crc16(const uint8_t *d, int n) {
+  uint16_t c = 0xFFFF;
+  for (int i = 0; i < n; i++) {
+    c ^= (uint16_t)(d[i] << 8);
+    for (int b = 0; b < 8; b++) c = (c & 0x8000) ? (uint16_t)((c << 1) ^ 0x1021) : (uint16_t)(c << 1);
+  }
+  return c;
+}
+bool plat_net_available(void) { return getenv("NB_NET_PORT") != NULL; }
+bool plat_net_open(void) {
+  if (net_fd > 0) return true;
+  const char *port = getenv("NB_NET_PORT");
+  if (!port) return false;
+  int fd = socket(AF_INET, SOCK_STREAM, 0);
+  struct sockaddr_in a = {0};
+  a.sin_family = AF_INET, a.sin_port = htons((uint16_t)atoi(port)), a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  if (connect(fd, (struct sockaddr *)&a, sizeof a) < 0) {
+    close(fd);
+    return false;
+  }
+  fcntl(fd, F_SETFL, O_NONBLOCK);
+  net_fd = fd, net_n = 0;
+  /* the handshake the firmware's link makes: Hello, then the gateway's HelloAck */
+  plat_net_send(0x0A, NULL, 0);
+  return true;
+}
+bool plat_net_send(uint8_t type, const void *payload, uint16_t length) {
+  if (net_fd <= 0) return false;
+  uint8_t f[8 + 4096 + 2];
+  f[0] = 'T', f[1] = 'M', f[2] = 'I', f[3] = 'A', f[4] = 1, f[5] = type, f[6] = (uint8_t)length, f[7] = (uint8_t)(length >> 8);
+  if (length) memcpy(f + 8, payload, length);
+  uint16_t c = crc16(f, 8 + length);
+  f[8 + length] = (uint8_t)c, f[9 + length] = (uint8_t)(c >> 8);
+  int n = 10 + length, at = 0;
+  while (at < n) {
+    ssize_t w = write(net_fd, f + at, (size_t)(n - at));
+    if (w < 0 && errno == EAGAIN) continue;
+    if (w <= 0) return false;
+    at += (int)w;
+  }
+  return true;
+}
+int plat_net_poll(uint8_t *type, void *buffer, uint16_t capacity) {
+  if (net_fd <= 0) return -1;
+  for (;;) {
+    if (net_n >= 10) {
+      if (memcmp(net_in, "TMIA", 4)) {   /* (out of step: drop a byte) */
+        memmove(net_in, net_in + 1, (size_t)--net_n);
+        continue;
+      }
+      int len = net_in[6] | net_in[7] << 8;
+      if (net_n >= 10 + len) {
+        *type = net_in[5];
+        int k = len < capacity ? len : capacity;
+        memcpy(buffer, net_in + 8, (size_t)k);
+        memmove(net_in, net_in + 10 + len, (size_t)(net_n - 10 - len));
+        net_n -= 10 + len;
+        if (*type == 0x0B || *type == 0x0A) continue;   /* (HelloAck: the link's own) */
+        return k;
+      }
+    }
+    if (net_n == (int)sizeof net_in) net_n = 0;
+    ssize_t r = read(net_fd, net_in + net_n, sizeof net_in - (size_t)net_n);
+    if (r <= 0) return -1;
+    net_n += (int)r;
+  }
+}
+void plat_net_close(void) {
+  if (net_fd > 0) close(net_fd);
+  net_fd = 0;
+}
+bool plat_net_plugged(void) { return true; }

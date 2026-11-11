@@ -224,6 +224,7 @@ static void old_area(int s, float x, float z) {
 #endif
 
 bool save_world(void) {
+  if (slot == 0) return edits_flush();   /* (a world joined: its changes only, never one of the player's) */
   bool ok = edits_flush();
   uint32_t tl;
   void *t = tiles_data(&tl);
@@ -368,6 +369,34 @@ void new_world(int s, int64_t seed, int mode, bool cheats, int type, const char 
   pl.mode = (uint8_t)mode;
   played(s);
 }
+
+/* a world joined (mp.c): slot 0, never listed, made again from the seed each time; the player
+ * starts where the host stands, in the host's game mode */
+void mp_world_begin(int64_t seed, int type, int mode, uint32_t time, float x, float y, float z) {
+  plat_remove_prefix("nb0");
+  slot = 0;
+  copy_name(cur_name, "Multiplayer");
+  uint32_t tl;
+  void *t = tiles_data(&tl);
+  memset(t, 0, tl);
+  memset(ents, 0, sizeof ents);
+  world_seed = seed;
+  game_time = time;
+  world_cheats = false, lan_open = lan_cheats = false, game_rules = GR_DEFAULT, world_type = (uint8_t)type;
+  memset(&weather, 0, sizeof weather);
+  rain_str = thunder_str = 0;
+#if NB_DIMS
+  dim = DIM_OVERWORLD;
+  memset(&dst, 0, sizeof dst);
+  n_old = 0;
+#endif
+  world_new(seed, "nb0");
+  player_spawn();
+  if (x != 0 || y != 0 || z != 0) pl.x = x + 1, pl.y = y, pl.z = z, pl.spawn_x = (int)x, pl.spawn_y = (int)y, pl.spawn_z = (int)z;
+  pl.mode = (uint8_t)mode;
+}
+bool mp_world_temporary(void) { return slot == 0; }
+const char *world_name(void) { return cur_name; }
 
 bool rename_world(int s, const char *name) {
   Head h;

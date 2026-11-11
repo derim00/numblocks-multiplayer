@@ -28,6 +28,7 @@ static const MobInfo info[] = {
     [E_CRYSTAL] = {2.0f, 2.0f, 0.0f, 5},    [E_DRAGON] = {16.0f, 8.0f, 0.0f, 200},
     [E_VILLAGER] = {0.6f, 1.95f, 0.3f, 20},   /* (EntityAIWander's 0.6 of its speed, 0.5) */
 #endif
+    [E_PLAYER] = {0.6f, 1.8f, 0.0f, 20},     /* another player (mp.c) */
 };
 #if NB_DIMS
 void ender_tp_random_(Entity *e);
@@ -75,6 +76,20 @@ int mob_parts(const Entity *e, float pt, Part *o) {
   float pitch = e->pitch * 0.017453292f, age = e->age + pt;
   float sw = cosf(f * 0.6662f), swo = cosf(f * 0.6662f + PI);
   switch (e->type) {
+    case E_PLAYER: {
+      /* ModelBiped: another player, arms and legs swinging as they walk */
+      int sk = SKIN_PLAYER + (e->sheared & 7);
+      box(-4, -8, -4, 8, 8, 8, 0, 0, 0, 0, 0, sk)->rx = pitch;
+      box(-4, 0, -2, 8, 12, 4, 16, 16, 0, 0, 0, sk);
+      Part *ra = box(-3, -2, -2, 4, 12, 4, 40, 16, -5, 2, 0, sk);
+      Part *la = box(-1, -2, -2, 4, 12, 4, 40, 16, 5, 2, 0, sk);
+      Part *rl = box(-2, 0, -2, 4, 12, 4, 0, 16, -1.9f, 12, 0, sk);
+      Part *ll = box(-2, 0, -2, 4, 12, 4, 0, 16, 1.9f, 12, 0, sk);
+      la->mirror = ll->mirror = 1;
+      ra->rx = swo * a, la->rx = sw * a;
+      rl->rx = sw * 1.4f * a, ll->rx = swo * 1.4f * a;
+      break;
+    }
     case E_ZOMBIE:
     case E_SKELETON: {
       int sk = e->type == E_ZOMBIE ? SKIN_ZOMBIE : SKIN_SKELETON;

@@ -216,12 +216,13 @@ enum { E_NONE, E_ITEM, E_ZOMBIE, E_SKELETON, E_CREEPER, E_SPIDER, E_PIG, E_COW, 
  * are hit), then what flies (fireballs, eyes of ender: their item in item) */
 enum { E_PIGMAN = E_BOBBER + 1, E_GHAST, E_BLAZE, E_MAGMA, E_WSKELETON, E_ENDERMAN, E_CRYSTAL, E_DRAGON, E_FIREBALL, E_EYE,
        E_VILLAGER };   /* (and the villages' villagers) */
-#define IS_MOB(t) (((t) >= E_ZOMBIE && (t) <= E_CHICKEN) || ((t) >= E_PIGMAN && (t) <= E_DRAGON) || (t) == E_VILLAGER)
+#define IS_MOB(t) (((t) >= E_ZOMBIE && (t) <= E_CHICKEN) || ((t) >= E_PIGMAN && (t) <= E_DRAGON) || (t) == E_VILLAGER || \
+                   (t) == 40 /* E_PLAYER */)
 #define NOT_MOB(t) (!IS_MOB(t))
 #define IS_MONSTER(t) (((t) >= E_ZOMBIE && (t) <= E_SPIDER) || ((t) >= E_PIGMAN && (t) <= E_ENDERMAN))
 #else
-#define IS_MOB(t) ((t) >= E_ZOMBIE && (t) <= E_CHICKEN)
-#define NOT_MOB(t) ((t) < E_ZOMBIE || (t) > E_CHICKEN)
+#define IS_MOB(t) (((t) >= E_ZOMBIE && (t) <= E_CHICKEN) || (t) == 40 /* E_PLAYER */)
+#define NOT_MOB(t) (!IS_MOB(t))
 #define IS_MONSTER(t) ((t) >= E_ZOMBIE && (t) <= E_SPIDER)
 #endif
 typedef struct {
@@ -306,7 +307,8 @@ void break_block_at(int x, int y, int z, bool drops);
 /* ---------------------------------------------------------------- screens (gui.c) */
 enum { GUI_NONE, GUI_INVENTORY, GUI_CRAFTING, GUI_FURNACE, GUI_CHEST, GUI_CREATIVE, GUI_CHAT,
        GUI_PAUSE, GUI_DEATH, GUI_OPTIONS, GUI_TITLE, GUI_WORLDS, GUI_CREATE, GUI_CONFIRM, GUI_LOADING, GUI_CONTROLS,
-       GUI_RENAME, GUI_LAN, GUI_KEYS
+       GUI_RENAME, GUI_LAN, GUI_KEYS,
+       GUI_SERVERS, GUI_MPWAIT, GUI_MPMSG   /* multiplayer (mp.c): the open games, joining, a game that ended */
 #if NB_DIMS
        , GUI_CREDITS   /* the End poem and the credits (gui.c) */
 #endif
@@ -319,7 +321,9 @@ void gui_tick(void);       /* 20 a second: furnaces */
 void tiles_removed(int x, int y, int z);   /* a chest or furnace broken: its items fall out */
 void tiles_forget(int x, int y, int z);    /* (or replaced by a command: they are gone) */
 void gui_menu(int screen);  /* opens a menu screen */
-enum { ACT_NONE, ACT_PLAY, ACT_NEW, ACT_QUIT_APP, ACT_SAVE_QUIT, ACT_RESPAWN, ACT_TITLE };
+enum { ACT_NONE, ACT_PLAY, ACT_NEW, ACT_QUIT_APP, ACT_SAVE_QUIT, ACT_RESPAWN, ACT_TITLE,
+       ACT_MP_PLAY,   /* (mp.c) the joined world is all here: play it */
+       ACT_MP_END };  /* (mp.c) the game joined ended: back to the title, saying why */
 extern int menu_choice;    /* what a menu asks main.c to do (ACT_*), 0 if nothing */
 extern int play_slot;      /* (ACT_PLAY) the world chosen */
 extern char name_text[];   /* (ACT_NEW) the new world's name, as typed */
@@ -405,4 +409,23 @@ void render_frame(const Camera *c, uint32_t time_of_day);
 void hud_strip(uint16_t *buf, int y0, int rows);
 void camera_reset(void);
 extern uint32_t ticks_run;   /* the player moved at once: the camera with them (main.c) */
+
+/* ---------------------------------------------------------------- the link to NumSocial (plat_*.c) */
+bool plat_net_available(void);   /* the firmware has it (NumSocial's) */
+bool plat_net_open(void);        /* waits for NumSocial on the computer (Back cancels) */
+bool plat_net_send(uint8_t type, const void *payload, uint16_t length);
+int plat_net_poll(uint8_t *type, void *buffer, uint16_t capacity);   /* a frame's length, -1: none */
+void plat_net_close(void);
+bool plat_net_plugged(void);
+
+/* ---------------------------------------------------------------- multiplayer (mp.c) */
+#define E_PLAYER 40   /* another player (mp.c's entities only, never in ents) */
+#define SKIN_PLAYER 24
+extern uint32_t game_time;
+void world_set_remote(int x, int y, int z, int b);   /* (world.c) a block another player changed */
+void mp_world_begin(int64_t seed, int type, int mode, uint32_t time, float x, float y, float z);   /* (save.c) */
+bool mp_world_temporary(void);   /* (save.c) a world joined: not one of the player's */
+const char *world_name(void);    /* (save.c) the world played's name */
+void edits_each(void (*f)(int x, int y, int z, int b));   /* (edits.c) the Overworld's changed blocks */
+#include "mp.h"
 #endif

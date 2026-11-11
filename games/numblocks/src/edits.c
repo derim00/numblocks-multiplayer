@@ -349,3 +349,39 @@ int edits_count(void) { return nj; }
 
 /* the merge buffer, lent out between merges (n bytes at most) */
 void *edits_scratch(uint32_t n) { return n <= scratch_n * 4 ? scratch : NULL; }
+
+/* every block changed in the Overworld (records first; edits_flush before, so the journal is in them):
+ * multiplayer sends them to the players who join (mp.c) */
+static int parse_int(const char **s) {
+  int neg = **s == '-', v = 0;
+  if (neg) (*s)++;
+  while (**s >= '0' && **s <= '9') v = v * 10 + (*(*s)++ - '0');
+  return neg ? -v : v;
+}
+void edits_each(void (*f)(int x, int y, int z, int b)) {
+  int plen = (int)strlen(prefix);
+  char name[40];
+  for (int i = 0; plat_record(i, name, sizeof name); i++) {
+    /* "nb1r-3_12.nbe": this world's, the Overworld's (a digit or '-' after the r) */
+    if (strncmp(name, prefix, (size_t)plen) || name[plen] != 'r') continue;
+    const char *s = name + plen + 1;
+    if (!(*s == '-' || (*s >= '0' && *s <= '9'))) continue;
+    int rx = parse_int(&s);
+    if (*s++ != '_') continue;
+    int rz = parse_int(&s);
+    if (strcmp(s, ".nbe")) continue;
+    uint32_t len = 0;
+    const uint8_t *r = plat_load(name, &len);
+    if (!r) continue;
+    for (uint32_t k = 0; k + 4 <= len; k += 4) {
+      uint32_t e = rd32(r + k);
+      int chunk = (int)(e >> 15 & 15), xz = (int)(e >> 7 & 255), y = (int)(e & 127);
+      int b = (int)(e >> 24);
+#if NB_DIMS
+      if (e & HI) b |= 256;
+#endif
+      int x = (rx * 4 + (chunk & 3)) * 16 + (xz & 15), z = (rz * 4 + (chunk >> 2)) * 16 + (xz >> 4);
+      f(x, y, z, b);   /* (only sends: storage, and r, stay as they are) */
+    }
+  }
+}

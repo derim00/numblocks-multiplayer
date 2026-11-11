@@ -500,6 +500,7 @@ void world_set(int x, int y, int z, int b) {
   int lx = x - vc_x0, ly = y - vc_y0, lz = z - vc_z0;
   VSET(VC_I(lx, ly, lz), b);
   edits_put(x, y, z, b);
+  if (mp_mode) mp_block_changed(x, y, z, b);   /* (to the other players; not those that came from them) */
   /* the column's sky top, then the light around */
   int col = lz * VCX + lx, t = vtop[col];
 #if NB_DIMS
@@ -514,6 +515,17 @@ void world_set(int x, int y, int z, int b) {
   }
   light_mark(lx - 15, ly - 15, lz - 15, lx + 16, VCY, lz + 16);
   mac_box(lx, ly, lz, lx + 1, ly + 1, lz + 1);
+}
+
+/* a block another player changed: in the cache as world_set does, else kept for when it is made */
+void world_set_remote(int x, int y, int z, int b) {
+  if (y < 0 || y >= WORLD_H) return;
+#if NB_DIMS
+  if (dim != DIM_OVERWORLD) return;   /* (only the Overworld is shared) */
+#endif
+  if (world_loaded(x, y, z) && !PEND((z - vc_z0) * VCX + x - vc_x0)) {
+    if (world_get(x, y, z) != b) world_set(x, y, z, b);
+  } else edits_put(x, y, z, b);
 }
 
 /* Chunk.getPrecipitationHeight: the first y above the blocks rain lands on

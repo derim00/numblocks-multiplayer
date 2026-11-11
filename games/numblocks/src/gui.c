@@ -1264,7 +1264,7 @@ static int nbuttons, bcur;
 enum { B_NO, B_SINGLE, B_OPTIONS, B_QUITAPP, B_PLAY, B_CREATE, B_DELETE, B_CANCEL, B_MODE, B_SEED, B_DOCREATE,
        B_DODELETE, B_DIFF, B_GFX, B_LOOK, B_CLOUDS, B_BOB, B_DONE, B_BACK_GAME, B_SAVEQUIT, B_RESPAWN, B_TITLE,
        B_CONTROLS, B_CONTROLS_DONE, B_NAME, B_RENAME, B_DORENAME, B_RECREATE, B_CHEATS, B_LAN, B_LAN_MODE,
-       B_LAN_CHEATS, B_LAN_START, B_TYPE };
+       B_LAN_CHEATS, B_LAN_START, B_TYPE, B_MULTI, B_JOIN, B_REFRESH, B_PNAME, B_MP_OK, B_MP_CANCEL };
 int menu_choice;            /* an action for main.c (ACT_*) */
 int create_mode;            /* the new world's game mode */
 bool create_cheats;         /* and whether it allows cheats */
@@ -1281,6 +1281,10 @@ static int ksel = -1, kcol, kscroll;
 static bool kwait;
 static void keys_input(uint32_t pressed);
 static int controls_from;   /* and the key sheet */
+
+/* multiplayer: the game selected in the list; frames left before connecting to NumSocial (so the
+ * screen saying so is drawn first: connecting waits) */
+static int msel, mp_connect_in;
 
 /* the worlds, the one played last first, and the one selected */
 static uint8_t wlist[MAX_WORLDS], nworlds, wsel;
@@ -1300,7 +1304,7 @@ static void list_worlds(void) {
 /* Typing in a field: the calculator's keys as its own keyboard has them, letters (its alpha
  * letters: e^x is a, + is z, - a space) or digits; alpha switches between them, shift makes the
  * next letter a capital (twice: all of them), backspace deletes, OK or Back is done */
-enum { F_NONE, F_NAME, F_SEED };
+enum { F_NONE, F_NAME, F_SEED, F_PLAYER };
 static int field;               /* the field being typed in */
 static uint8_t f_digits, f_caps;   /* (f_caps: 1 the next letter, 2 all of them) */
 static bool f_sel;              /* the text is selected: the first key typed replaces it (an arrow keeps it) */
@@ -1326,14 +1330,14 @@ static char key_char(int k) {
 static void field_open(int f) {
   field = f;
   f_digits = f == F_SEED, f_caps = 0;
-  f_sel = (f == F_NAME ? name_text : seed_text)[0] != 0;
+  f_sel = (f == F_NAME ? name_text : f == F_PLAYER ? mp_name : seed_text)[0] != 0;
   raw_held = ~(uint64_t)0;   /* (the key that opened it is not typed) */
 }
 static void field_input(void) {
   uint64_t raw = plat_scan(), down = raw & ~raw_held;
   raw_held = raw;
-  char *t = field == F_NAME ? name_text : seed_text;
-  int max = field == F_NAME ? WORLD_NAME : 20, n = (int)strlen(t);
+  char *t = field == F_NAME ? name_text : field == F_PLAYER ? mp_name : seed_text;
+  int max = field == F_NAME ? WORLD_NAME : field == F_PLAYER ? MP_NAME : 20, n = (int)strlen(t);
   for (int k = 0; k < 64; k++) {
     if (!(down >> k & 1)) continue;
     if (k == RK_ALPHA) f_digits = !f_digits;
@@ -1351,6 +1355,10 @@ static void field_input(void) {
         field = F_NONE;
         press(B_DORENAME);
         return;
+      }
+      if (field == F_PLAYER) {
+        if (!mp_name[0]) mp_load_name();
+        mp_save_name();
       }
       field = F_NONE;
     } else {
@@ -1520,7 +1528,7 @@ static void menu(int screen) {
     case GUI_TITLE: {
       int j = h / 4 + 48;
       add_button(w / 2 - 100, j, 200, 1, B_SINGLE, T("Singleplayer"));
-      add_button(w / 2 - 100, j + 24, 200, 0, B_NO, T("Multiplayer"));
+      add_button(w / 2 - 100, j + 24, 200, 1, B_MULTI, T("Multiplayer"));
       add_button(w / 2 - 100, j + 72 + 12 - 24, 98, 1, B_OPTIONS, T("Options..."));
       add_button(w / 2 + 2, j + 72 + 12 - 24, 98, 1, B_QUITAPP, T("Quit Game"));
       break;
@@ -1586,8 +1594,9 @@ static void menu(int screen) {
       add_button(w / 2 - 100, h / 4 + 48 - 16, 98, 0, B_NO, T("Achievements"));
       add_button(w / 2 + 2, h / 4 + 48 - 16, 98, 0, B_NO, T("Statistics"));
       add_button(w / 2 - 100, h / 4 + 96 - 16, 98, 1, B_OPTIONS, T("Options..."));
-      add_button(w / 2 + 2, h / 4 + 96 - 16, 98, !lan_open, B_LAN, T("Open to LAN"));
-      add_button(w / 2 - 100, h / 4 + 120 - 16, 200, 1, B_SAVEQUIT, T("Save and Quit to Title"));
+      add_button(w / 2 + 2, h / 4 + 96 - 16, 98, !lan_open && mp_mode == MP_OFF, B_LAN, T("Open to LAN"));
+      add_button(w / 2 - 100, h / 4 + 120 - 16, 200, 1, B_SAVEQUIT,
+                 mp_mode == MP_GUEST ? T("Disconnect") : T("Save and Quit to Title"));
       break;
     case GUI_LAN:
       /* GuiShareToLan */
@@ -1597,6 +1606,22 @@ static void menu(int screen) {
       add_button(w / 2 + 5, 100, 150, 1, B_LAN_CHEATS, t);
       add_button(w / 2 - 155, h - 28, 150, 1, B_LAN_START, T("Start LAN World"));
       add_button(w / 2 + 5, h - 28, 150, 1, B_CANCEL, T("Cancel"));
+      break;
+    case GUI_SERVERS: {
+      /* GuiMultiplayer: the open games; up and down choose one */
+      bool on = mp_link == MPL_ONLINE;
+      cat(t, T("Name: "), mp_name);
+      add_button(w / 2 - 100, h - 76, 200, 1, B_PNAME, t);
+      add_button(w / 2 - 154, h - 52, 150, on && mp_nservers > 0, B_JOIN, T("Join Server"));
+      add_button(w / 2 + 4, h - 52, 150, 1, B_REFRESH, T("Refresh"));
+      add_button(w / 2 - 75, h - 28, 150, 1, B_CANCEL, T("Cancel"));
+      break;
+    }
+    case GUI_MPWAIT:
+      add_button(w / 2 - 100, h / 2 + 30, 200, 1, B_MP_CANCEL, T("Cancel"));
+      break;
+    case GUI_MPMSG:
+      add_button(w / 2 - 100, h / 2 + 30, 200, 1, B_MP_OK, T("Back to server list"));
       break;
     case GUI_DEATH:
       add_button(w / 2 - 100, h / 4 + 72, 200, 1, B_RESPAWN, T("Respawn"));
@@ -1634,6 +1659,35 @@ static void press(int id) {
   WorldInfo wi;
   switch (id) {
     case B_SINGLE: gui_menu(GUI_WORLDS); break;
+    case B_MULTI:
+      if (!mp_name[0]) mp_load_name();
+      if (mp_link != MPL_ONLINE) strcpy(mp_status, "Connecting to NumSocial...  (Back: cancel)");
+      mp_nservers = 0;
+      gui_menu(GUI_SERVERS);
+      mp_connect_in = 2;   /* (once this screen has been drawn) */
+      break;
+    case B_REFRESH:
+      if (mp_link != MPL_ONLINE) {
+        strcpy(mp_status, "Connecting to NumSocial...  (Back: cancel)");
+        mp_connect_in = 2;
+      } else mp_list();
+      break;
+    case B_PNAME: field_open(F_PLAYER); break;
+    case B_JOIN:
+      if (mp_nservers) {
+        mp_join(msel);
+        gui_menu(GUI_MPWAIT);
+      }
+      break;
+    case B_MP_CANCEL:
+      mp_leave();
+      gui_menu(GUI_SERVERS);
+      mp_list();
+      break;
+    case B_MP_OK:
+      gui_menu(GUI_SERVERS);
+      mp_list();
+      break;
     case B_OPTIONS:
       options_from = gui;
       gui_menu(GUI_OPTIONS);
@@ -1686,7 +1740,9 @@ static void press(int id) {
       if (nworlds) delete_world(wlist[wsel]);
       gui_menu(GUI_WORLDS);
       break;
-    case B_CANCEL: gui_menu(gui == GUI_WORLDS ? GUI_TITLE : gui == GUI_LAN ? GUI_PAUSE : GUI_WORLDS); break;
+    case B_CANCEL:
+      gui_menu(gui == GUI_WORLDS || gui == GUI_SERVERS ? GUI_TITLE : gui == GUI_LAN ? GUI_PAUSE : GUI_WORLDS);
+      break;
     case B_MODE:
       /* (cheats follow the game mode until they are chosen) */
       create_mode = !create_mode;
@@ -1701,8 +1757,10 @@ static void press(int id) {
     case B_LAN_MODE: lan_mode = !lan_mode; break;
     case B_LAN_CHEATS: lan_allow = !lan_allow; break;
     case B_LAN_START:
-      /* IntegratedServer.shareToLAN: the game mode is for players who join; cheats for everyone */
-      lan_open = true, lan_cheats = lan_allow;
+      /* IntegratedServer.shareToLAN: the game mode is for players who join; cheats for everyone. Here the
+       * computer (NumSocial) is the server, and the game shows in everyone's Multiplayer list */
+      if (mp_host(lan_mode)) lan_open = true, lan_cheats = lan_allow;
+      else chat_add(mp_status, CHAT_RED);
       gui = GUI_NONE;
       break;
     case B_NAME: field_open(F_NAME); break;
@@ -1742,6 +1800,18 @@ static void menu_input(uint32_t keys, uint32_t pressed) {
     return;
   }
   raw_held = plat_scan();
+  if (gui == GUI_SERVERS) {
+    if (mp_connect_in && !--mp_connect_in) {
+      if (mp_connect()) mp_list();
+      menu(gui);
+    }
+    if (msel >= mp_nservers) msel = mp_nservers ? mp_nservers - 1 : 0;
+    if ((pressed & (K_UP | K_DOWN)) && mp_nservers) {
+      msel = (msel + ((pressed & K_DOWN) ? 1 : mp_nservers - 1)) % mp_nservers;
+      pressed &= ~(uint32_t)(K_UP | K_DOWN);
+    }
+    if (!(bcur < nbuttons && buttons[bcur].on)) menu(gui);
+  }
   if (gui == GUI_WORLDS && (pressed & (K_UP | K_DOWN)) && nworlds) {
     /* up and down: the world; left and right: the buttons */
     wsel = (uint8_t)((wsel + ((pressed & K_DOWN) ? 1 : nworlds - 1)) % nworlds);
@@ -1759,8 +1829,11 @@ static void menu_input(uint32_t keys, uint32_t pressed) {
     if (gui == GUI_PAUSE) gui = GUI_NONE;
     else if (gui == GUI_OPTIONS) press(B_DONE);
     else if (gui == GUI_CONTROLS) press(B_CONTROLS_DONE);
-    else if (gui == GUI_WORLDS || gui == GUI_CREATE || gui == GUI_CONFIRM || gui == GUI_RENAME || gui == GUI_LAN)
+    else if (gui == GUI_WORLDS || gui == GUI_CREATE || gui == GUI_CONFIRM || gui == GUI_RENAME || gui == GUI_LAN ||
+             gui == GUI_SERVERS)
       press(B_CANCEL);
+    else if (gui == GUI_MPWAIT) press(B_MP_CANCEL);
+    else if (gui == GUI_MPMSG) press(B_MP_OK);
   }
 }
 
@@ -2166,6 +2239,41 @@ static void menu_screen(void) {
       text_center(T("LAN World"), w / 2, 50, 0xFFFF);
       text_center(T("Settings for Other Players"), w / 2, 82, 0xFFFF);
       break;
+    case GUI_SERVERS: {
+      text_center(T("Play Multiplayer"), w / 2, 8, 0xFFFF);
+      int first = msel > 3 ? msel - 3 : 0;
+      for (int k = first; k < mp_nservers && k < first + 4; k++) {
+        const MpServer *s = &mp_servers[k];
+        int x = w / 2 - 130, y = 22 + (k - first) * 30 + 2;
+        if (k == msel) {
+          fill(x - 2, y - 2, 260, 29, RGB(0x80, 0x80, 0x80));
+          fill(x - 1, y - 1, 258, 27, 0);
+        }
+        text(s->world, x + 2, y + 1, 0xFFFF, true);
+        char line[64], n[8];
+        cat(line, s->host, "  -  ");
+        number(s->players, n);
+        cat(line + strlen(line), n, "/");
+        number(s->max, n);
+        cat(line + strlen(line), n, s->mode ? T("  Creative") : T("  Survival"));
+        text(line, x + 2, y + 13, RGB(0x80, 0x80, 0x80), true);
+      }
+      const char *say = mp_link != MPL_ONLINE ? mp_status
+                        : mp_listing ? T("Looking for games...")
+                        : !mp_nservers ? T("No game open. Open yours: Pause, Open to LAN") : NULL;
+      if (say) text_center(say, w / 2, 70, RGB(0xA0, 0xA0, 0xA0));
+      if (field == F_PLAYER) text_center(T("alpha: letters or digits, shift: capitals, OK: done"), w / 2, h - 90,
+                                         RGB(0xA0, 0xA0, 0xA0));
+      break;
+    }
+    case GUI_MPWAIT:
+      text_center(T("Joining the game"), w / 2, h / 2 - 40, 0xFFFF);
+      text_center(mp_status, w / 2, h / 2 - 15, RGB(0xA0, 0xA0, 0xA0));
+      break;
+    case GUI_MPMSG:
+      text_center(T("Connection Lost"), w / 2, h / 2 - 40, RGB(0xA0, 0xA0, 0xA0));
+      text_center(mp_status, w / 2, h / 2 - 15, 0xFFFF);
+      break;
     case GUI_LOADING:
       text_center(T("Loading world"), w / 2, h / 2 - 50, 0xFFFF);
       text_center(T("Building terrain"), w / 2, h / 2 - 20, 0xFFFF);
@@ -2413,7 +2521,18 @@ void hud_strip(uint16_t *buf, int y0, int rows) {
   if (gui < GUI_PAUSE || gui == GUI_PAUSE || gui == GUI_DEATH || gui == GUI_LAN ||
       ((gui == GUI_OPTIONS || gui == GUI_KEYS) && options_from == GUI_PAUSE))
     hud();
-  if (gui == GUI_NONE || gui == GUI_CHAT) chat_lines();
+  if (gui == GUI_NONE || gui == GUI_CHAT) {
+    /* the other players' names over their heads (RenderPlayer's name tag) */
+    for (int i = 0; i < MP_PLAYERS; i++) {
+      int x, y;
+      const char *n;
+      if (!mp_label_at(i, &x, &y, &n)) continue;
+      int tw = text_width(n);
+      tint_rect(x - tw / 2 - 1, y - 1, tw + 2, 10, 0, 16);
+      text(n, x - tw / 2, y, 0xFFFF, false);
+    }
+    chat_lines();
+  }
   if (pl.hurt_time > 0 && gui == GUI_NONE) {
     /* (Minecraft tilts the camera; a red flash says the same here) */
     tint_rect(0, y0, SCREEN_W, rows, RGB(0xFF, 0, 0), pl.hurt_time * 2 / 3);
@@ -2438,6 +2557,7 @@ void hud_strip(uint16_t *buf, int y0, int rows) {
       menu_screen();
       break;
     case GUI_WORLDS: case GUI_CREATE: case GUI_CONFIRM: case GUI_LOADING: case GUI_RENAME:
+    case GUI_SERVERS: case GUI_MPWAIT: case GUI_MPMSG:
       dirt_background();
       menu_screen();
       break;

@@ -13,7 +13,7 @@ BUILD_DIR = output
 STRIP ?= arm-none-eabi-strip --strip-unneeded
 CLIENT_JAR ?= client.jar
 GEN ?= src/gen.c
-GAME = src/main.c src/world.c src/edits.c src/render.c src/player.c src/phys.c src/inv.c src/entity.c src/mob.c src/tick.c src/gui.c src/hand.c src/save.c src/data.c src/names.c src/command.c $(GEN)
+GAME = src/main.c src/world.c src/edits.c src/render.c src/player.c src/phys.c src/inv.c src/entity.c src/mob.c src/tick.c src/gui.c src/hand.c src/save.c src/data.c src/names.c src/command.c src/mp.c $(GEN)
 HEADERS = $(wildcard src/*.h) ../common/epsilon_app.h ../common/epsilon_files.h ../common/np_text.h Makefile
 # NumBlocks.nwa's sources: the game's, its tables with the Nether and the End, and theirs
 DIMS_SRC = src/dims.c src/end.c
@@ -67,6 +67,11 @@ build/dims_test: $(GAME_DIMS) src/plat_host.c tests/dims.c $(HEADERS)
 build/np_load: $(GAME) src/plat_host.c tests/np_load.c $(HEADERS)
 	$(Q) mkdir -p build
 	$(Q) cc $(HOST_FLAGS) $(GAME) src/plat_host.c tests/np_load.c -lm -o $@
+# multiplayer: a host and a guest through two NumSocial gateways (tests/mp_test.py)
+build/mp: $(GAME_DIMS) src/plat_host.c tests/mp.c $(HEADERS)
+	$(Q) mkdir -p build
+	$(Q) cc $(HOST_FLAGS) -DNB_DIMS=1 $(GAME_DIMS) src/plat_host.c tests/mp.c -lm -o $@
+	@echo "HOST    $@"
 # villages and desert temples: where they start, their layouts, their blocks, old worlds (structs.c)
 build/structs_test: $(GAME_DIMS) src/plat_host.c tests/structs.c $(HEADERS)
 	$(Q) mkdir -p build
@@ -115,7 +120,7 @@ $(BUILD_DIR)/sim-module.o: $(GAME) src/plat_eadk.c $(HEADERS) | $(BUILD_DIR)
 # the other targets (platform/port.mk): make port TARGET=sdl, web, nspire, ti84ce
 PORT_ID = numblocks
 PORT_NAME = NumBlocks
-PORT_SRC = src/main.c src/world.c src/edits.c src/render.c src/player.c src/phys.c src/inv.c src/entity.c src/mob.c src/tick.c src/gui.c src/hand.c src/save.c src/names.c src/command.c src/gen.c src/data_dims.c src/dims.c src/end.c src/plat_eadk.c
+PORT_SRC = src/main.c src/world.c src/edits.c src/render.c src/player.c src/phys.c src/inv.c src/entity.c src/mob.c src/tick.c src/gui.c src/hand.c src/save.c src/names.c src/command.c src/mp.c src/gen.c src/data_dims.c src/dims.c src/end.c src/plat_eadk.c
 PORT_FLAGS = -DNB_DIMS=1
 PORT_CE = ce
 include ../../platform/port.mk

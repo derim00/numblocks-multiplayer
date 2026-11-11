@@ -1266,20 +1266,18 @@ int held_texel(int b, int face, int u, int v) {
 /* how lit the player's hand is (0..32): the light where the eyes are */
 int view_light(void) { return light_shade(0, cam_i >= 0 ? vl[cam_i] : 15); }
 
-static void ents_frame(void) {
-  ndraws = 0;
-  for (int i = 0; i < N_ENT && ndraws < N_DRAW; i++) {
-    const Entity *e = &ents[i];
-    if (e->type == E_NONE) continue;
+/* an entity to draw this frame (its rectangle on the picture); false: not seen */
+static bool ent_add(const Entity *e) {
+  {
     float t = tick_frac;
     float ex = e->px + (e->x - e->px) * t - vc_x0, ey = e->py + (e->y - e->py) * t - vc_y0,
           ez = e->pz + (e->z - e->pz) * t - vc_z0;
     float dx = ex - ox, dy = ey - oy, dz = ez - oz;
     float dist = sqrtf(dx * dx + dy * dy + dz * dz);
 #if NB_DIMS
-    if (dist > MAX_T + (e->type == E_DRAGON ? 12 : 1)) continue;
+    if (dist > MAX_T + (e->type == E_DRAGON ? 12 : 1)) return false;
 #else
-    if (dist > MAX_T + 1) continue;
+    if (dist > MAX_T + 1) return false;
 #endif
     float w, h, y0 = 0;   /* (the box: w wide, h high from y0) */
 #if NB_DIMS
@@ -1298,12 +1296,28 @@ static void ents_frame(void) {
       c[k][0] = ex + ((k & 1) ? w : -w) / 2, c[k][1] = ey + y0 + ((k & 2) ? h : 0), c[k][2] = ez + ((k & 4) ? w : -w) / 2;
     Draw *d = &draws[ndraws];
     int r[4];
-    if (!rect_of(c, r)) continue;
+    if (!rect_of(c, r)) return false;
     d->x0 = r[0], d->y0 = r[1], d->x1 = r[2], d->y1 = r[3];
     d->e = e, d->ex = ex, d->ey = ey, d->ez = ez, d->dist = dist;
     int cx = (int)floorf(ex), cy = (int)floorf(ey + 0.2f), cz = (int)floorf(ez);
     d->light = (unsigned)cx < VCX && (unsigned)cy < VCY && (unsigned)cz < VCZ ? vl[VC_I(cx, cy, cz)] : 15;
     ndraws++;
+    return true;
+  }
+}
+
+static void ents_frame(void) {
+  ndraws = 0;
+  for (int i = 0; i < N_ENT && ndraws < N_DRAW; i++)
+    if (ents[i].type != E_NONE) ent_add(&ents[i]);
+  /* the other players (mp.c), their names where their heads are (in screen pixels: twice the picture's) */
+  for (int i = 0; i < MP_PLAYERS; i++) {
+    const Entity *e = mp_entity(i);
+    bool shown = e && ndraws < N_DRAW && ent_add(e);
+    if (shown) {
+      const Draw *d = &draws[ndraws - 1];
+      mp_label(i, (d->x0 + d->x1) * SCREEN_W / RW / 2, d->y0 * SCREEN_H / RH - 10, d->y0 > 1);
+    } else mp_label(i, 0, 0, false);
   }
 }
 
@@ -1436,6 +1450,7 @@ static int box_texel(const Box *b, int face, float x, float y, float z) {
     case 4: u = U + d + lx, v = V + d + ly; break;                  /* z0 (the front) */
     default: u = U + d + w + d + (w - 1 - lx), v = V + d + ly; break;   /* z1 (the back) */
   }
+  if (b->skin >= SKIN_PLAYER) return mp_skin_texel(b->skin - SKIN_PLAYER, u, v);   /* (another player, mp.c) */
 #if NB_DIMS
   if (b->skin == SKIN_DRAGON) {   /* (256 x 256; its wings' skin starts at u -56: wrapped) */
     u &= 255;

@@ -95,6 +95,7 @@ void game_init(void) {
   copy_restore();
   copy_write();
   load_options();
+  mp_load_name();
 #ifdef BENCH
   /* (a build for timing: straight into a new world of seed BENCH) */
   start_in_world = true, start_seed = BENCH, opt.keys_seen = KEY_SHEET;
@@ -136,8 +137,11 @@ bool game_frame(void) {
       if (gui != GUI_NONE && gui < GUI_PAUSE) gui_close();
       save_world();
     }
+    mp_leave();
+    plat_net_close();
     return false;
   }
+  mp_frame();   /* (what the other players did) */
   int gui_before = gui;
   gui_input(k, pressed);
   if (menu_choice) {
@@ -167,7 +171,16 @@ bool game_frame(void) {
       case ACT_SAVE_QUIT:
       case ACT_TITLE:
         save_world();
+        mp_leave();   /* (a game opened is closed, one joined is left) */
         title();
+        break;
+      case ACT_MP_PLAY:
+        loading();
+        break;
+      case ACT_MP_END:
+        /* the game joined is over: back to the title, and why */
+        if (in_world) save_world(), title();
+        gui_menu(GUI_MPMSG);
         break;
       case ACT_RESPAWN:
         player_respawn();
@@ -221,6 +234,7 @@ bool game_frame(void) {
     world_tick();
     gui_tick();
     hand_tick();
+    mp_tick();
     ticks_run++;
     if (rule(GR_DAYLIGHT_CYCLE)) game_time++;
     acc -= 50;

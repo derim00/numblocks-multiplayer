@@ -88,3 +88,26 @@ uint32_t plat_storage_free(void) {
 }
 void plat_begin(void) { np_app_begin(); }
 int plat_end(void) { return np_app_end(); }
+
+/* ---------------------------------------------------------------- the link to NumSocial (mp.c)
+ * The NumSocial firmware lends its USB link to apps (numsocial_link.h); the app lends it its memory. */
+#include "numsocial_link.h"
+static uint64_t net_storage[7680 / 8];
+bool plat_net_available(void) { return numsocial_available() && numsocial_storage_size() <= sizeof net_storage; }
+static bool net_on;
+bool plat_net_open(void) {
+  if (!plat_net_available()) return false;
+  net_on = numsocial_open(net_storage, sizeof net_storage) != 0;
+  return net_on;
+}
+bool plat_net_send(uint8_t type, const void *payload, uint16_t length) {
+  return net_on && numsocial_send(type, payload, length);
+}
+int plat_net_poll(uint8_t *type, void *buffer, uint16_t capacity) {
+  return net_on ? numsocial_poll(type, buffer, capacity) : -1;
+}
+void plat_net_close(void) {
+  if (net_on) numsocial_close();
+  net_on = false;
+}
+bool plat_net_plugged(void) { return !net_on || numsocial_plugged(); }

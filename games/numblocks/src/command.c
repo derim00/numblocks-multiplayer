@@ -564,6 +564,10 @@ static int words(char *s, char **w) {
 }
 
 void command_run(const char *line) {
+  if (line[0] != '/' && mp_mode != MP_OFF) {
+    mp_say(line);   /* (the server sends it back to everyone, "<name> hello") */
+    return;
+  }
   if (line[0] != '/') {
     /* said: "<Player> hello" */
     out_n = 0;
