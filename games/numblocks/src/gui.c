@@ -1759,7 +1759,7 @@ static void press(int id) {
     case B_LAN_START:
       /* IntegratedServer.shareToLAN: the game mode is for players who join; cheats for everyone. Here the
        * computer (NumSocial) is the server, and the game shows in everyone's Multiplayer list */
-      if (mp_host(lan_mode)) lan_open = true, lan_cheats = lan_allow;
+      if (mp_host(lan_mode, lan_allow)) chat_add(T("Opening the game..."), CHAT_GRAY);
       else chat_add(mp_status, CHAT_RED);
       gui = GUI_NONE;
       break;

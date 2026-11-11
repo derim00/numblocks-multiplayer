@@ -32,7 +32,7 @@ void mp_save_name(void);
 bool mp_connect(void);        /* to NumSocial (blocking; Back cancels): true when online */
 void mp_list(void);           /* asks for the open games */
 void mp_join(int i);          /* joins mp_servers[i] */
-bool mp_host(int mode);       /* opens this world to others (mode: theirs) */
+bool mp_host(int mode, bool cheats);   /* asks to open this world to others (mode: theirs); chat says when */
 void mp_leave(void);          /* leaves (or closes) the game */
 void mp_frame(void);          /* each frame: what NumSocial sent */
 void mp_tick(void);           /* 20 a second in a world: positions out, players moved */

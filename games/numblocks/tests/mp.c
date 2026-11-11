@@ -79,7 +79,7 @@ int main(int argc, char **argv) {
     run(1);
     gx = (int)floorf(pl.x) + 2, gy = (int)floorf(pl.y), gz = (int)floorf(pl.z);
     world_set(gx, gy, gz, B_GOLD_BLOCK);
-    check(mp_host(0), "partie ouverte (Open to LAN)");
+    check(mp_host(0, false), "partie ouverte (Open to LAN)");
     check(run_until(hosted, 20), "code de la partie recu");
     printf("CODE %s AT %d %d %d\n", mp_code, gx, gy, gz);
     fflush(stdout);
@@ -96,10 +96,43 @@ int main(int argc, char **argv) {
     run(2);
     mp_leave();
     run(1);
+  } else if (!strcmp(argv[1], "visit")) {
+    /* joins the first game opened by someone else than "Mac", walks about, says hello */
+    double end = now() + (argc > 4 ? atof(argv[4]) : 600);
+    check(mp_connect(), "connecte a NumSocial, en ligne");
+    int k = -1;
+    while (k < 0 && now() < end) {
+      mp_list();
+      run_until(listed, 20);
+      for (int i = 0; i < mp_nservers; i++)
+        if (strcmp(mp_servers[i].host, "Mac")) k = i;
+      if (k < 0) run(3);
+    }
+    if (k < 0) return 1;
+    printf("REJOINT %s de %s\n", mp_servers[k].world, mp_servers[k].host);
+    fflush(stdout);
+    mp_join(k);
+    gui_menu(GUI_MPWAIT);
+    check(run_until(in_game, 60), "partie rejointe, monde charge");
+    mp_say("Salut ! Je suis le bot du Mac");
+    while (now() < end && mp_mode == MP_GUEST) {
+      host_keys = K_FWD | K_RIGHT;
+      run(2);
+      host_keys = K_JUMP;
+      run(1);
+      host_keys = 0;
+      run(2);
+      for (int i = 0; i < MP_PLAYERS; i++)
+        if (mp_entity(i)) printf("vois un joueur a %.1f %.1f %.1f\n", mp_entity(i)->x, mp_entity(i)->y, mp_entity(i)->z);
+      fflush(stdout);
+    }
+    printf("fin: %s\n", mp_status);
+    mp_leave();
+    run(1);
   } else if (!strcmp(argv[1], "serve")) {
     /* a game open for a while (a calculator joins it): the player turns about, says hello now and then */
     double end = now() + (argc > 4 ? atof(argv[4]) : 600);
-    check(mp_host(1), "partie ouverte");
+    check(mp_host(1, false), "partie ouverte");
     check(run_until(hosted, 20), "code de la partie recu");
     printf("CODE %s\n", mp_code);
     fflush(stdout);

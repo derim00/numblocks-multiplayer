@@ -37,6 +37,17 @@ static int n_out;
 static bool applying, waiting_world;
 static uint32_t ticks;
 static int my_id = -1;
+static bool host_cheats;      /* (Open to LAN's Allow Cheats, once the game is open) */
+static uint32_t host_asked;   /* ticks since the game was asked to open (0: not waiting) */
+
+static int put_str8(uint8_t *p, const char *s, int max);
+/* the player's name, again (NumSocial may have started again since: it forgets) */
+static void hello(void) {
+  uint8_t b[24];
+  b[0] = PROTOCOL;
+  int k = 1 + put_str8(b + 1, mp_name, MP_NAME);
+  plat_net_send(F_HELLO, b, (uint16_t)k);
+}
 
 typedef struct {
   uint8_t id, here, named, flags;
@@ -114,10 +125,7 @@ bool mp_connect(void) {
     strcpy(mp_status, "Open NumSocial on the computer");
     return false;
   }
-  uint8_t b[24];
-  b[0] = PROTOCOL;
-  int k = 1 + put_str8(b + 1, mp_name, MP_NAME);
-  send(F_HELLO, b, k);
+  hello();
   /* (the computer reaches the public list: a few seconds at most) */
   uint32_t t0 = plat_millis();
   while (plat_millis() - t0 < 12000) {
@@ -150,6 +158,7 @@ void mp_join(int i) {
   if (mp_link != MPL_ONLINE || i < 0 || i >= mp_nservers) return;
   uint8_t b[16];
   int k = put_str8(b, mp_servers[i].id, 11);
+  hello();
   memset(rem, 0, sizeof rem);
   my_id = -1;
   waiting_world = true;
@@ -164,7 +173,7 @@ static void dump_one(int x, int y, int z, int b) {
   if (++n_dump == OUT_MAX) send(F_DUMP, out, n_dump * ENTRY), n_dump = 0;
 }
 
-bool mp_host(int mode) {
+bool mp_host(int mode, bool cheats) {
   if (!mp_connect()) return false;
 #if NB_DIMS
   if (dim != DIM_OVERWORLD) {
@@ -178,7 +187,9 @@ bool mp_host(int mode) {
   b[8] = world_type, b[9] = (uint8_t)mode;
   put32(b + 10, game_time);
   int k = 14 + put_str8(b + 14, world_name(), 24);
+  hello();
   send(F_HOST, b, k);
+  host_cheats = cheats, host_asked = 1;
   edits_flush();
   n_dump = 0, n_out = 0;
   edits_each(dump_one);
@@ -315,8 +326,10 @@ static void handle(int type, const uint8_t *p, int n) {
     case F_HOST_OK: {
       int at = 0;
       get_str8(p, n, &at, mp_code, 11);
+      host_asked = 0;
       if (mp_code[0]) {
         mp_mode = MP_HOST;
+        lan_open = true, lan_cheats = host_cheats;
         char line[48] = "Local game hosted, code ";
         strcat(line, mp_code);
         chat_add(line, CHAT_GRAY);
@@ -404,6 +417,10 @@ void mp_frame(void) {
 }
 
 void mp_tick(void) {
+  if (host_asked && ++host_asked > 400) {   /* (20 s) */
+    host_asked = 0;
+    chat_add("Could not open the game: NumSocial did not answer", CHAT_RED);
+  }
   if (mp_mode == MP_OFF) return;
   ticks++;
   if (n_out) send(F_BLOCK, out, n_out * ENTRY), n_out = 0;
