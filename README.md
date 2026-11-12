@@ -35,6 +35,13 @@ le lien avec Internet.
 Pas besoin d'être sur le même Wi-Fi : malgré le nom du bouton (celui de
 Minecraft), tout passe par Internet, sans réglage de box ni compte à créer.
 
+**Et sans Internet ?** Chaque partie ouverte est aussi annoncée sur le réseau
+local : les ordinateurs sur le même Wi-Fi la voient dans la liste, marquée
+**[LAN]**, et jouent en direct entre eux, même sans connexion à Internet (au
+lycée, en voiture avec un partage de connexion...). Sous Windows, accepte la
+première fois que le pare-feu demande d'autoriser NumSocial sur les réseaux
+privés.
+
 ### Limites de cette version
 
 - Seul l'**Overworld** est partagé : un joueur dans le Nether ou l'End disparaît
@@ -72,8 +79,12 @@ NumBlocks (calculatrice) ⇄ USB ⇄ NumSocial (ordinateur) ⇄ Internet ⇄ Num
 - **Le monde ne voyage pas** : il est recréé à partir de sa graine sur chaque
   calculatrice ; seuls les blocs modifiés circulent, plus les positions 5 fois
   par seconde.
+- **Sur le réseau local**, l'ordinateur de l'hôte annonce la partie (multicast
+  et broadcast UDP) et la sert en TCP : la même chose que par le broker, sans
+  Internet.
 - **Côté calculatrice**, le jeu parle à NumSocial par le lien USB que le
-  firmware NumSocial publie pour les applis externes (`src/numsocial_link.h`).
+  firmware NumSocial publie pour les applis externes, dans une table repérée
+  par sa signature (`src/numsocial_link.h`).
   Les nouveautés sont dans `src/mp.c` (le multijoueur), `src/gui.c` (les
   écrans), `src/render.c` et `src/mob.c` (les autres joueurs).
 
